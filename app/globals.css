@@ -9,6 +9,10 @@
 .post-media{width:100%;border-radius:14px;margin-top:8px}
 .post-link{display:block;margin-top:8px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .post-foot{display:flex;gap:14px;margin-top:10px;color:var(--muted);font-size:.85rem;font-weight:700}
+.post-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.react{background:var(--bg);color:var(--ink);box-shadow:none;border:1px solid var(--line);padding:7px 13px;font-size:.88rem;border-radius:999px}
+.react.on-like{background:#D1FAE5;border-color:#10B981}
+.react.on-dis{background:#FEE2E2;border-color:#EF4444}
 .ig-row{display:flex;gap:12px;align-items:center;padding:14px}
 .sm-btn{padding:8px 16px;font-size:.9rem}
 .seg{display:flex;gap:8px;background:var(--bg);border-radius:999px;padding:4px}
