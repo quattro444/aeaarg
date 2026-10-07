@@ -1,6 +1,6 @@
 import './globals.css'
 import Navbar from './components/Navbar'
-export const metadata = { title: 'Campionato Ping Pong' }
+export const metadata = { title: 'Pistoia Ping Pong' }
 export default function RootLayout({ children }) {
   return (
     <html lang="it">

@@ -76,7 +76,7 @@ export default function Navbar() {
   return (
     <>
     <header className="top"><div className="top-in">
-      <Link className="brand" href="/" prefetch><i />Campionato Ping Pong</Link>
+      <Link className="brand" href="/" prefetch><i />Pistoia Ping Pong</Link>
       <nav className="desk">
         <Link href="/" prefetch className={active('/')}>Classifica</Link>
         <Link href="/partite" prefetch className={active('/partite')}>Partite</Link>
