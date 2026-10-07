@@ -19,7 +19,7 @@ export default function Utenti() {
       const v = name.trim().toLowerCase()
       query = query.or(`username.ilike.%${v}%,display_name.ilike.%${v}%`)
     }
-    const { data } = await query
+    const { data } = await query.order('created_at', { ascending: false })
     setList(data || [])
     if (data && data.length) {
       const ids = data.map(x => x.id)
@@ -41,6 +41,7 @@ export default function Utenti() {
   }
 
   useEffect(() => { search('') }, [])
+  useEffect(() => { const t = setTimeout(() => search(q), 300); return () => clearTimeout(t) }, [q])
 
   async function toggle(id, on) {
     if (!user) return
@@ -51,29 +52,31 @@ export default function Utenti() {
 
   return (
     <main style={{ maxWidth: 600 }}>
-      <h1>Persone</h1>
-      <p className="sub">Cerca @username o nome, visita e segui. Contatori live.</p>
-      <div className="card">
-        <input placeholder="Cerca @marco..." value={q} onChange={e => { setQ(e.target.value); search(e.target.value) }} />
+      <h1>Cerca</h1>
+      <p className="sub">Persone del campionato.</p>
+      {/* stile Instagram: barra tonda live, niente bottone */}
+      <div style={{ position: 'sticky', top: 70, zIndex: 5, background: 'var(--bg)', padding: '8px 0' }}>
+        <input placeholder="🔍  Cerca nome o @username..." value={q} onChange={e => setQ(e.target.value)}
+          style={{ maxWidth: 'none', borderRadius: 999, background: '#fff', padding: '12px 18px' }} />
       </div>
       {list.map(p => (
-        <div key={p.id} className="card" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div key={p.id} className="card ig-row">
           <Link href={`/giocatore/${p.id}`} prefetch>
-            <div className="big-avatar" style={{ width: 52, height: 52 }}>{p.avatar_url ? <img src={p.avatar_url} alt="" /> : (p.display_name || p.username || '?')[0]}</div>
+            <div className="big-avatar" style={{ width: 54, height: 54 }}>{p.avatar_url ? <img src={p.avatar_url} alt="" /> : (p.display_name || p.username || '?')[0]}</div>
           </Link>
           <div style={{ minWidth: 0, flex: 1 }}>
             <Link href={`/giocatore/${p.id}`} prefetch style={{ textDecoration: 'none' }}><b>{p.display_name || 'Senza nome'}</b></Link>
-            {p.username && <div className="sub small" style={{ margin: 0 }}>@{p.username}</div>}
-            <div className="sub small" style={{ margin: 0 }}>{counts[p.id]?.followers || 0} follower · {counts[p.id]?.following || 0} seguiti</div>
+            {p.username && <div className="handle">@{p.username}</div>}
+            <div className="sub small" style={{ margin: 0 }}>{counts[p.id]?.followers || 0} follower</div>
           </div>
           {user && user.id !== p.id && (
             following.has(p.id)
-              ? <button className="alt" onClick={() => toggle(p.id, true)}>Seguito</button>
-              : <button onClick={() => toggle(p.id, false)}>Segui</button>
+              ? <button className="alt sm-btn" onClick={() => toggle(p.id, true)}>Seguito</button>
+              : <button className="sm-btn" onClick={() => toggle(p.id, false)}>Segui</button>
           )}
         </div>
       ))}
-      {list.length === 0 && <p className="empty">Nessuno trovato.</p>}
+      {list.length === 0 && <p className="empty">Nessuno trovato per “{q}”.</p>}
     </main>
   )
 }

@@ -11,6 +11,7 @@ const VOICES = [
   { href: '/notizie', label: 'Notizie', icon: '📰' },
   { href: '/utenti', label: 'Persone', icon: '🔍' },
   { href: '/profilo', label: 'Profilo', icon: '👤', auth: true },
+  { href: '/impostazioni', label: 'Impostazioni', icon: '⚙️', auth: true },
   { href: '/admin', label: 'Admin', icon: '🛠️', staff: true },
 ]
 
@@ -117,31 +118,24 @@ export default function Navbar() {
     </div>
     </header>
 
-    {/* Bottom bar stile PlayStation solo mobile */}
-    <nav className="psbar">
-      <Link href="/" prefetch className={'ps-item' + active('/')}><span>🏆</span><small>Classifica</small></Link>
-      <Link href="/partite" prefetch className={'ps-item' + active('/partite')}><span>🏓</span><small>Partite</small></Link>
-      <button className="ps-fab" onClick={() => setSheet(true)} aria-label="Menu">＋</button>
-      <Link href="/squadre" prefetch className={'ps-item' + active('/squadre')}><span>🛡️</span><small>Squadre</small></Link>
-      {user
-        ? <Link href="/profilo" prefetch className={'ps-item' + active('/profilo')}><span>👤</span><small>Profilo</small></Link>
-        : <Link href="/login" prefetch className={'ps-item' + active('/login')}><span>🔑</span><small>Accedi</small></Link>}
+    {/* Bottom: SOLO il + centrale, tutto il resto solo nel cerchio */}
+    <nav className="psbar solo">
+      <button className={'ps-fab' + (sheet ? ' open' : '')} onClick={() => setSheet(!sheet)} aria-label="Menu">{sheet ? '✕' : '＋'}</button>
     </nav>
 
     {sheet && (
       <div className="radial-bg" onClick={() => setSheet(false)}>
         <div className="radial-center" onClick={e => e.stopPropagation()}>
-          {/* cerchio: le voci stanno TUTTE intorno al bottone centrale, ottimale su telefono stretto */}
           {(() => {
             const items = [...sheetVoices]
             if (!user) items.push({ href: '/login?mode=signup', label: 'Crea', icon: '✨' })
-            const R = 118
+            const R = 120
             return items.map((v, i) => {
               const a = (-90 + (360 / items.length) * i) * (Math.PI / 180)
               const x = Math.cos(a) * R, y = Math.sin(a) * R
               return (
                 <Link key={v.href + v.label} href={v.href} prefetch
-                  className="radial-item" style={{ transform: `translate(${x}px,${y}px)` }}
+                  className="radial-item" style={{ transform: `translate(${x}px,${y}px)`, animationDelay: `${i * 45}ms` }}
                   onClick={() => setSheet(false)} title={v.label}>
                   <span>{v.icon}</span><small>{v.label}</small>
                 </Link>

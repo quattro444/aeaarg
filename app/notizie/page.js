@@ -6,8 +6,8 @@ import { supabase } from '../../lib/supabase'
 function timeAgo(iso) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000
   if (s < 60) return 'ora'
-  if (s < 3600) return Math.floor(s / 60) + 'm'
-  if (s < 86400) return Math.floor(s / 3600) + 'h'
+  if (s < 3600) return Math.floor(s / 60) + ' min'
+  if (s < 86400) return Math.floor(s / 3600) + ' h'
   return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })
 }
 
@@ -19,11 +19,13 @@ export default function Notizie() {
   const [views, setViews] = useState({})
   const [following, setFollowing] = useState(new Set())
   const [text, setText] = useState('')
-  const [img, setImg] = useState('')
-  const [vid, setVid] = useState('')
-  const [lnk, setLnk] = useState('')
+  const [file, setFile] = useState(null)
+  const [preview, setPreview] = useState('')
+  const [isVideo, setIsVideo] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [q, setQ] = useState('')
   const [msg, setMsg] = useState('')
-  const [filter, setFilter] = useState('tutti') // tutti | seguiti
+  const [filter, setFilter] = useState('tutti')
 
   async function load() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -37,10 +39,13 @@ export default function Notizie() {
       const { data: f } = await supabase.from('follows').select('following_id').eq('follower_id', u.id)
       setFollowing(new Set((f || []).map(x => x.following_id)))
     }
-    // posts visibili: public + miei; hidden solo se autore/staff (RLS già filtra)
     const { data: p } = await supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(50)
-    let list = p || []
+    let list = (p || []).filter(x => x.visibility !== 'hidden')
     if (filter === 'seguiti' && u) list = list.filter(x => x.author_id === u.id || following.has(x.author_id))
+    if (q.trim()) {
+      const v = q.trim().toLowerCase()
+      list = list.filter(x => x.text.toLowerCase().includes(v))
+    }
     setPosts(list)
     if (list.length) {
       const ids = [...new Set(list.map(x => x.author_id))]
@@ -48,12 +53,10 @@ export default function Notizie() {
       const m = {}
       ;(profs || []).forEach(a => { m[a.id] = a })
       setAuthors(m)
-      // conteggio views reale (1 riga = 1 utente unico)
       const { data: v } = await supabase.from('post_views').select('post_id').in('post_id', list.map(x => x.id))
       const c = {}
       ;(v || []).forEach(r => { c[r.post_id] = (c[r.post_id] || 0) + 1 })
       setViews(c)
-      // registra LA MIA view una sola volta (upsert ignora duplicati: anti-farming)
       if (u) {
         for (const post of list) {
           await supabase.from('post_views').upsert(
@@ -61,16 +64,30 @@ export default function Notizie() {
             { onConflict: 'post_id,viewer_id', ignoreDuplicates: true }
           )
         }
-        // riconta dopo le mie (solo se sono nuovo spettatore cambia)
-        const { data: v2 } = await supabase.from('post_views').select('post_id').in('post_id', list.map(x => x.id))
-        const c2 = {}
-        ;(v2 || []).forEach(r => { c2[r.post_id] = (c2[r.post_id] || 0) + 1 })
-        setViews(c2)
       }
-    }
+    } else { setAuthors({}); setViews({}) }
   }
 
   useEffect(() => { load() }, [filter])
+  useEffect(() => { const t = setTimeout(load, 400); return () => clearTimeout(t) }, [q])
+
+  function pick(e) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setFile(f)
+    setIsVideo(f.type.startsWith('video'))
+    setPreview(URL.createObjectURL(f))
+  }
+
+  async function uploadFile() {
+    if (!file) return null
+    setUploading(true)
+    const path = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const { error } = await supabase.storage.from('news-media').upload(path, file, { upsert: true })
+    setUploading(false)
+    if (error) { setMsg('Upload fallito (MIGRAZIONE7.sql?): ' + error.message); return null }
+    return supabase.storage.from('news-media').getPublicUrl(path).data.publicUrl
+  }
 
   const muted = myProf && myProf.news_muted_until && new Date(myProf.news_muted_until) > new Date()
   const banned = myProf && myProf.news_banned
@@ -78,87 +95,91 @@ export default function Notizie() {
   async function pubblica() {
     setMsg('')
     if (!user) { setMsg('Accedi per pubblicare.'); return }
-    if (banned) { setMsg('Sei bannato dalle notizie.'); return }
-    if (muted) { setMsg('Sei in timeout fino a ' + new Date(myProf.news_muted_until).toLocaleString('it-IT')); return }
-    const t = text.trim()
-    if (!t) { setMsg('Scrivi qualcosa.'); return }
+    if (banned || muted) { setMsg('Non puoi pubblicare al momento.'); return }
+    if (!text.trim() && !file) { setMsg('Scrivi o allega qualcosa.'); return }
+    let url = null
+    if (file) { url = await uploadFile(); if (!url && file) return }
     const { error } = await supabase.from('posts').insert({
-      author_id: user.id, text: t.slice(0, 500),
-      image_url: img.trim() || null, video_url: vid.trim() || null, link_url: lnk.trim() || null,
+      author_id: user.id, text: (text.trim() || '(media)').slice(0, 500),
+      image_url: url && !isVideo ? url : null,
+      video_url: url && isVideo ? url : null,
       visibility: 'public',
     })
     if (error) { setMsg('Bloccato: ' + error.message); return }
-    setText(''); setImg(''); setVid(''); setLnk('')
+    setText(''); setFile(null); setPreview('')
     load()
   }
 
-  async function segui(id) {
+  async function segui(id, on) {
     if (!user) return
-    const { error } = await supabase.from('follows').insert({ follower_id: user.id, following_id: id })
-    if (!error) load()
-  }
-  async function smetti(id) {
-    await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', id)
+    if (on) await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', id)
+    else await supabase.from('follows').insert({ follower_id: user.id, following_id: id })
     load()
   }
 
   return (
     <main style={{ maxWidth: 600 }}>
       <h1>Notizie</h1>
-      <p className="sub">Come X: testo, foto, video, link. Views contate 1 sola volta per account.</p>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <button className={filter === 'tutti' ? '' : 'alt'} onClick={() => setFilter('tutti')}>Tutti</button>
-        <button className={filter === 'seguiti' ? '' : 'alt'} onClick={() => setFilter('seguiti')}>Seguiti</button>
-        <Link href="/utenti" prefetch><button className="alt">Cerca persone</button></Link>
+      <p className="sub">Dal campo, in tempo reale.</p>
+      {/* ricerca stile Instagram: diretta, senza bottoni */}
+      <div className="card" style={{ padding: 12 }}>
+        <input placeholder="🔍 Cerca notizie o vai alle persone..." value={q} onChange={e => setQ(e.target.value)}
+          style={{ maxWidth: 'none', borderRadius: 999, background: 'var(--bg)' }} />
+        <div className="row" style={{ marginTop: 8 }}>
+          <button className={filter === 'tutti' ? '' : 'alt'} onClick={() => setFilter('tutti')}>Tutti</button>
+          <button className={filter === 'seguiti' ? '' : 'alt'} onClick={() => setFilter('seguiti')}>Seguiti</button>
+          <Link href="/utenti" prefetch className="sub small" style={{ marginLeft: 'auto', alignSelf: 'center' }}>Trova persone →</Link>
+        </div>
       </div>
+
       {user && !banned && !muted && (
         <div className="card">
-          <textarea value={text} onChange={e => setText(e.target.value.slice(0, 500))} rows={3} placeholder="Cosa succede nel campionato?"
-            style={{ width: '100%', font: 'inherit', padding: 10, borderRadius: 10, border: '1px solid var(--line)' }} />
-          <p className="sub small">{text.length}/500</p>
-          <input placeholder="Foto URL (opzionale)" value={img} onChange={e => setImg(e.target.value)} />
-          <input placeholder="Video URL (opzionale)" value={vid} onChange={e => setVid(e.target.value)} />
-          <input placeholder="Link (opzionale https://...)" value={lnk} onChange={e => setLnk(e.target.value)} />
-          <div className="row"><button onClick={pubblica}>Pubblica</button></div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div className="big-avatar" style={{ width: 44, height: 44 }}>{myProf?.avatar_url ? <img src={myProf.avatar_url} alt="" /> : (myProf?.display_name || '?')[0]}</div>
+            <textarea value={text} onChange={e => setText(e.target.value.slice(0, 500))} rows={2} placeholder="Racconta la partita..."
+              style={{ flex: 1, font: 'inherit', padding: 12, borderRadius: 14, border: '1px solid var(--line)' }} />
+          </div>
+          {preview && (isVideo
+            ? <video src={preview} controls style={{ width: '100%', borderRadius: 14, marginTop: 10 }} />
+            : <img src={preview} alt="" style={{ width: '100%', borderRadius: 14, marginTop: 10 }} />)}
+          <div className="row">
+            <label style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '10px 16px', fontWeight: 800, cursor: 'pointer', background: '#fff' }}>
+              📎 Foto/Video
+              <input type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={pick} />
+            </label>
+            <button onClick={pubblica} disabled={uploading}>{uploading ? 'Carico...' : 'Pubblica'}</button>
+          </div>
           {msg && <p className="msg">{msg}</p>}
         </div>
       )}
-      {(banned || muted) && <div className="card"><p className="msg err">{banned ? 'Bannato dalle notizie.' : 'Timeout fino a ' + new Date(myProf.news_muted_until).toLocaleString('it-IT')}</p></div>}
 
       {posts.map(p => {
         const a = authors[p.author_id]
-        const isMine = user && p.author_id === user.id
-        const followed = following.has(p.author_id)
         return (
-          <article key={p.id} className="card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <article key={p.id} className="card post">
+            <div className="post-head">
               <Link href={`/giocatore/${p.author_id}`} prefetch>
-                <div className="big-avatar" style={{ width: 44, height: 44, fontSize: '1.1rem' }}>
-                  {a?.avatar_url ? <img src={a.avatar_url} alt="" /> : (a?.display_name || '?')[0]}
-                </div>
+                <div className="big-avatar" style={{ width: 46, height: 46 }}>{a?.avatar_url ? <img src={a.avatar_url} alt="" /> : (a?.display_name || '?')[0]}</div>
               </Link>
-              <div style={{ minWidth: 0 }}>
-                <b>{a?.display_name || '...'}</b>{a?.username && <span className="sub"> @{a.username}</span>}
-                <div className="sub small" style={{ margin: 0 }}>{timeAgo(p.created_at)}{p.visibility !== 'public' ? ` · ${p.visibility}` : ''}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div><b>{a?.display_name || '...'}</b>{a?.username && <span className="handle"> @{a.username}</span>}</div>
+                <div className="sub small" style={{ margin: 0 }}>{timeAgo(p.created_at)}</div>
               </div>
-              {user && !isMine && (
-                followed
-                  ? <button className="mini alt" style={{ marginLeft: 'auto' }} onClick={() => smetti(p.author_id)}>Seguito</button>
-                  : <button className="mini" style={{ marginLeft: 'auto' }} onClick={() => segui(p.author_id)}>Segui</button>
+              {user && user.id !== p.author_id && (
+                following.has(p.author_id)
+                  ? <button className="mini alt" onClick={() => segui(p.author_id, true)}>Seguito</button>
+                  : <button className="mini" onClick={() => segui(p.author_id, false)}>Segui</button>
               )}
             </div>
-            <p style={{ whiteSpace: 'pre-wrap', margin: '10px 0' }}>{p.text}</p>
-            {p.image_url && <img src={p.image_url} alt="" loading="lazy" style={{ width: '100%', borderRadius: 12 }} />}
-            {p.video_url && <video src={p.video_url} controls style={{ width: '100%', borderRadius: 12, marginTop: 8 }} />}
-            {p.link_url && <a href={p.link_url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 8, color: 'var(--table2)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>🔗 {p.link_url}</a>}
-            <div style={{ display: 'flex', gap: 14, marginTop: 10, color: 'var(--muted)', fontSize: '.85rem', fontWeight: 700 }}>
-              <span>👁 {views[p.id] || 0}</span>
-              <Link href={`/giocatore/${p.author_id}`} prefetch style={{ textDecoration: 'none' }}>Profilo →</Link>
-            </div>
+            <p className="post-text">{p.text}</p>
+            {p.image_url && <img src={p.image_url} alt="" loading="lazy" className="post-media" />}
+            {p.video_url && <video src={p.video_url} controls className="post-media" />}
+            {p.link_url && <a href={p.link_url} target="_blank" rel="noreferrer" className="post-link">🔗 {p.link_url}</a>}
+            <div className="post-foot"><span>👁 {views[p.id] || 0}</span></div>
           </article>
         )
       })}
-      {posts.length === 0 && <p className="empty">Nessuna notizia. Sii il primo.</p>}
+      {posts.length === 0 && <p className="empty">Niente qui. Pubblica la prima.</p>}
     </main>
   )
 }
