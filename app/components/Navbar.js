@@ -8,6 +8,8 @@ const VOICES = [
   { href: '/', label: 'Classifica', icon: '🏆' },
   { href: '/partite', label: 'Partite', icon: '🏓' },
   { href: '/squadre', label: 'Squadre', icon: '🛡️' },
+  { href: '/notizie', label: 'Notizie', icon: '📰' },
+  { href: '/utenti', label: 'Persone', icon: '🔍' },
   { href: '/profilo', label: 'Profilo', icon: '👤', auth: true },
   { href: '/admin', label: 'Admin', icon: '🛠️', staff: true },
 ]
@@ -81,6 +83,7 @@ export default function Navbar() {
         <Link href="/" prefetch className={active('/')}>Classifica</Link>
         <Link href="/partite" prefetch className={active('/partite')}>Partite</Link>
         <Link href="/squadre" prefetch className={active('/squadre')}>Squadre</Link>
+        <Link href="/notizie" prefetch className={active('/notizie')}>Notizie</Link>
         {loading ? null : user ? (
           <>
             {isStaff && <Link href="/admin" prefetch className={active('/admin')}>Admin</Link>}
@@ -126,20 +129,27 @@ export default function Navbar() {
     </nav>
 
     {sheet && (
-      <div className="sheet-bg" onClick={() => setSheet(false)}>
-        <div className="sheet" onClick={e => e.stopPropagation()}>
-          <div className="sheet-handle" />
-          <h2>Tutto il campionato</h2>
-          <div className="sheet-grid">
-            {sheetVoices.map(v => (
-              <Link key={v.href} href={v.href} prefetch className="sheet-cell" onClick={() => setSheet(false)}>
-                <span className="sheet-icon">{v.icon}</span><b>{v.label}</b>
-              </Link>
-            ))}
-            {!user && <Link href="/login?mode=signup" prefetch className="sheet-cell" onClick={() => setSheet(false)}><span className="sheet-icon">✨</span><b>Crea account</b></Link>}
-            {user && <button className="sheet-cell danger" onClick={() => { setSheet(false); setConfirmExit(true) }}><span className="sheet-icon">🚪</span><b>Esci</b></button>}
-          </div>
-          <button className="alt sheet-close" onClick={() => setSheet(false)}>Chiudi</button>
+      <div className="radial-bg" onClick={() => setSheet(false)}>
+        <div className="radial-center" onClick={e => e.stopPropagation()}>
+          {/* cerchio: le voci stanno TUTTE intorno al bottone centrale, ottimale su telefono stretto */}
+          {(() => {
+            const items = [...sheetVoices]
+            if (!user) items.push({ href: '/login?mode=signup', label: 'Crea', icon: '✨' })
+            const R = 118
+            return items.map((v, i) => {
+              const a = (-90 + (360 / items.length) * i) * (Math.PI / 180)
+              const x = Math.cos(a) * R, y = Math.sin(a) * R
+              return (
+                <Link key={v.href + v.label} href={v.href} prefetch
+                  className="radial-item" style={{ transform: `translate(${x}px,${y}px)` }}
+                  onClick={() => setSheet(false)} title={v.label}>
+                  <span>{v.icon}</span><small>{v.label}</small>
+                </Link>
+              )
+            })
+          })()}
+          <button className="ps-fab big" onClick={() => setSheet(false)} aria-label="Chiudi">✕</button>
+          {user && <button className="radial-exit" onClick={() => { setSheet(false); setConfirmExit(true) }}>Esci</button>}
         </div>
       </div>
     )}

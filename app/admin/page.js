@@ -442,7 +442,65 @@ export default function Admin() {
         )}
       </div>
 
+      <ModNotizie say={say} />
+
       {msg && <p className={'msg' + (bad ? ' err' : '')}>{msg}</p>}
     </main>
+  )
+}
+
+function ModNotizie({ say }) {
+  const [posts, setPosts] = useState([])
+  const [q, setQ] = useState('')
+  const [banMail, setBanMail] = useState('')
+  async function loadP() {
+    const { data } = await supabase.from('posts').select('*, author:author_id').order('created_at', { ascending: false }).limit(30)
+    setPosts(data || [])
+  }
+  useEffect(() => { loadP() }, [])
+  async function vis(id, visibility) {
+    const { error } = await supabase.from('posts').update({ visibility }).eq('id', id)
+    say(error ? 'Errore: ' + error.message : 'Visibilità: ' + visibility, !!error)
+    loadP()
+  }
+  async function del(id) {
+    if (!confirm('Eliminare definitivamente questa notizia?')) return
+    const { error } = await supabase.from('posts').delete().eq('id', id)
+    say(error ? 'Errore: ' + error.message : 'Notizia eliminata.', !!error)
+    loadP()
+  }
+  async function timeout() {
+    if (!banMail.trim()) return say('Scrivi email.', true)
+    const { data: p } = await supabase.from('profiles').select('id').eq('email', banMail.trim().toLowerCase()).single()
+    if (!p) return say('Profilo non trovato.', true)
+    const until = new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+    const { error } = await supabase.from('profiles').update({ news_muted_until: until }).eq('id', p.id)
+    say(error ? 'Errore: ' + error.message : 'Timeout 24h applicato.', !!error)
+  }
+  async function banToggle(id, cur) {
+    const { error } = await supabase.from('profiles').update({ news_banned: !cur, news_muted_until: null }).eq('id', id)
+    say(error ? 'Errore: ' + error.message : (!cur ? 'Bannato dalle notizie.' : 'Riammesso.'), !!error)
+    loadP()
+  }
+  return (
+    <div className="card">
+      <h2>Moderazione notizie</h2>
+      <p className="sub">Timeout 24h, ban, restringi visibilità, elimina. Views già anti-farming (1 per account).</p>
+      <div className="row">
+        <input placeholder="email per timeout 24h" value={banMail} onChange={e => setBanMail(e.target.value)} />
+        <button onClick={timeout}>Timeout 24h</button>
+      </div>
+      {posts.filter(p => !q || p.text.toLowerCase().includes(q.toLowerCase())).map(p => (
+        <div key={p.id} className="match-card">
+          <div className="match-top"><span className="match-teams">{p.text.slice(0, 80)}</span><span className="pill pending">{p.visibility}</span></div>
+          <div className="admin-actions">
+            <button className="mini" onClick={() => vis(p.id, 'public')}>Pubblica</button>
+            <button className="mini" onClick={() => vis(p.id, 'followers')}>Solo follower</button>
+            <button className="mini" onClick={() => vis(p.id, 'hidden')}>Nascondi</button>
+            <button className="mini danger" onClick={() => del(p.id)}>Elimina</button>
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
